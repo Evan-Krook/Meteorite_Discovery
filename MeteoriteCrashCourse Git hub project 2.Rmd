@@ -1,0 +1,978 @@
+---
+title: "A Crash Course in Meteorites"
+output: html_document
+---
+
+\renewcommand{\prob}{\mathsf{P}}
+\newcommand{\E}{\mathsf{E}}
+\newcommand{\Var}{\mathsf{Var}}
+\newcommand{\SD}{\mathsf{SD}}
+\newcommand{\SE}{\mathsf{SE}}
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      error = TRUE, fig.height = 4)
+
+library(tidyverse)
+library(kableExtra)
+library(egg)
+library(ggmap)
+library(rworldmap)
+library(sp)
+
+# If error emerges, switch the commented statements
+source("../scripts/viridis.R")
+source("../scripts/ggprob.R")
+# source("scripts/viridis.R")
+# source("scripts/ggprob.R")
+
+theme_set(theme_minimal())
+```
+
+```{r init, include=FALSE}
+meteors_orig = read_csv('Meteorite_Landings.csv')
+meteors_t = read_csv('Meteorite_Landings.csv')
+
+red = '#F42821'
+orange = '#F78B2C'
+yellow = '#F7CA2C'
+green = '#10E365'
+blue = 'darkturquoise'
+purple = '#803DF2'
+pink = 'salmon'
+black = 'black'
+gray = 'gray'
+brown = '#553D3A'
+white = 'white'
+```
+
+```{r NAs, include=FALSE}
+# tot = nrow(meteors_orig)
+
+# meteors_orig %>%
+#   summarise(nameNA = sum(is.na(name)), idNA = sum(is.na(id)), nametypeNA = sum(is.na(nametype)), recclassNA = sum(is.na(recclass)), `mass (g)NA` = sum(is.na(`mass (g)`)), fallNA = sum(is.na(fall)), yearNA = sum(is.na(year)), reclatNA = sum(is.na(reclat)), reclongNA = sum(is.na(reclong)), GeoLocationNA = sum(is.na(GeoLocation))) %>%
+#   pivot_longer(ends_with('NA'), values_to= 'count') %>%
+#   add_row(`name` = 'Total Observations', count = tot) %>%
+#   print(n=Inf)
+```
+
+```{r recclass_functions, include=FALSE}
+# Create functions to translate the recclass variable into useful information as the groups(not indented) and subgroups(indented) of the meteorites.
+# Stony
+#   Chondrite
+#   Achondrite
+# Stony-Iron
+#   Pallasite
+#   Mesosiderite
+# Iron
+#   Magmatic
+#   Non-Magmatic
+
+# Created a whole host of mini-functions which detect if a class is part of a certain subgroup.
+
+is_chondrite = function(class) {
+  return (str_detect(class, 'Chondrite') |
+          str_detect(class, '^E$') |
+          str_detect(class, '^EH$') |
+          str_detect(class, '^E[3-7]') |
+          str_detect(class, '^EH[3-7]') |
+          str_detect(class, '^EL[3-7]') |
+          str_detect(class, '^H[3-7]') |
+          str_detect(class, '^H$') |
+          str_detect(class, 'H-an') |
+          str_detect(class, '^H\\?$') |
+          str_detect(class, '^H\\~[3-7]') |
+          str_detect(class, '^L$') |
+          str_detect(class, 'L[3-7]') |
+          str_detect(class, 'LL[3-7]') |
+          str_detect(class, 'LL\\~[3-7]') |
+          str_detect(class, '^LL$') |
+          str_detect(class, '^LL') |
+          str_detect(class, 'L\\(LL\\)') |
+          str_detect(class, 'L/LL') |
+          str_detect(class, 'LL(L)') |
+          str_detect(class, 'L\\~[3-7]') |
+          str_detect(class, '^C$') |
+          str_detect(class, '^C[2-7]') |
+          str_detect(class, '^CI') |
+          str_detect(class, '^CM[1-2]') |
+          str_detect(class, '^CV[2-3]') |
+          str_detect(class, '^CR[1-7]') |
+          str_detect(class, '^CR$') |
+          str_detect(class, '^CR-an$') |
+          str_detect(class, '^CO') |
+          str_detect(class, '^CK') |
+          str_detect(class, '^CB') |
+          str_detect(class, '^CH') |
+          str_detect(class, '^K$') |
+          str_detect(class, '^K[3-7]$') |
+          str_detect(class, '^R$') |
+          str_detect(class, '^R\\d') |
+          str_detect(class, 'OC') |
+          str_detect(class, 'CM$') |
+          str_detect(class, '^L\\(\\?\\)3') |
+          str_detect(class, 'L\\(H\\)3') |
+          str_detect(class, '^H\\(\\?\\)4') |
+          str_detect(class, '^H\\(L\\)3') |
+          str_detect(class, '^H\\(5\\?\\)') |
+          str_detect(class, 'L(H)[2-7]') |
+          str_detect(class, '^L-imp melt$') |
+          str_detect(class, '^H-imp melt$') |
+          str_detect(class, 'CM-an$') |
+          str_detect(class, '^L-melt breccia$') |
+          str_detect(class, '^H-melt rock$') |
+          str_detect(class, '^H-metal$') |
+          str_detect(class, '^L-metal$') |
+          str_detect(class, '^L-melt rock$') |
+          str_detect(class, '^EH-imp melt$') |
+          str_detect(class, '^EL-melt rock$') |
+          str_detect(class, '^E-an$') |
+          str_detect(class, '^H-melt breccia$') |
+          str_detect(class, 'Relict H') |
+          str_detect(class, '^C1/2-ung$') |
+          str_detect(class, 'C1-ung'))
+}
+is_achondrite = function(class) {
+  return (str_detect(class, 'Achondrite') |
+          str_detect(class, 'Acapulcoite') |
+          str_detect(class, 'Lodranite') |
+          str_detect(class, 'Winonaite') |
+          str_detect(class, 'Howardite') |
+          str_detect(class, 'Eucrite') |
+          str_detect(class, 'Diogenite') |
+          str_detect(class, 'Angrite') |
+          str_detect(class, 'Aubrite') |
+          str_detect(class, 'Ureilite') |
+          str_detect(class, 'Brachinite') |
+          str_detect(class, 'Lunar') |
+          str_detect(class, 'Martian') |
+          str_detect(class, 'Enst achon-ung') |
+          str_detect(class, 'Enst achon'))
+}
+is_pallasite = function(class) {
+  return (str_detect(class, 'Pallasite'))
+}
+is_mesosiderite = function(class) {
+  return (str_detect(class, 'Mesosiderite'))
+}
+is_magmatic = function(class) {
+  return (str_detect(class, ' IIC') |
+          str_detect(class, ' IC') |
+          str_detect(class, ' IIIAB') |
+          str_detect(class, ' IIAB') |
+          str_detect(class, ' IID') |
+          str_detect(class, ' IIF') |
+          str_detect(class, ' IIG') |
+          str_detect(class, ' IIIE') |
+          str_detect(class, ' IIIF') |
+          str_detect(class, ' IVA') |
+          str_detect(class, ' IVA') |
+          str_detect(class, ' IVB'))
+}
+is_nonmagmatic = function(class) {
+  return (str_detect(class, ' IAB') |
+          str_detect(class, ' IIE'))
+}
+is_stony = function(class) {
+  return (str_detect(class, 'Stone-uncl') |
+          str_detect(class, 'Stone-ung'))
+}
+is_iron = function(class) {
+  return (str_detect(class, 'Iron, ungrouped') |
+          str_detect(class, '^Iron$') |
+          str_detect(class, '^iron$') |
+          str_detect(class, 'Iron\\?') |
+          str_detect(class, 'Relict iron'))
+}
+
+# Function that sorts meteorites into subgroups for the main groups of meteorites: Stony, Stony-Iron, and Iron
+# Stony      -- Chondrite or Achondrite
+# Stony-Iron -- Pallasite or Mesosiderite
+# Iron       -- Magmatic or Non-Magmatic
+# Function also will find un-subclassed meteorites and assign them to their main groups (Stony, Stony-Iron, and Iron). There should only be a small subset of these un-subgrouped occurences
+# Function will return Unknown for occurrences it cannot classify
+meteor_subgroup = function(class) {
+  # Determine if meteorite is Chondrite
+  if (is_chondrite(class)) {
+    return ('Chondrite')
+  } 
+  # Determine if meteorite is Achondrite
+  if (is_achondrite(class)) {
+    return ('Achondrite')
+  }
+  # Determine if meteorite is of the Pallasite
+  if (is_pallasite(class)) {
+    return ('Pallasite')
+  } 
+  # Determine if meteorite is a Mesosiderite
+  if (is_mesosiderite(class)) {
+    return ('Mesosiderite')
+  }
+  # Determine if meteorite is Magmatic
+  if (is_magmatic(class)) {
+    return ('Magmatic')
+  }
+  # Determine if meteorite is Non-Magmatic
+  if (is_nonmagmatic(class)) {
+    return ('Non-Magmatic')
+  }
+  # Determine if meteorite is an un-subgrouped stone meteorite
+  if (is_stony(class)) {
+    return ('Stony')
+  }
+  # Determine if meteorite is an un-subgrouped iron meteorite
+  if (is_iron(class)) {
+    return ('Iron')
+  }
+  
+  # Return unknown for any meteorite that does not fall into one of these bins
+  return ('Unknown')
+ 
+} 
+
+# WARNING -- This function is dependant on the results of the above function, meteor_subclass(). Using this function without first using that function will results in an error. 
+# Function that sorts the meteorites into their main groups -- Stony, Stony-Iron, and Iron -- that operates on the results of the meteor_subclass function
+# Function will return Unknown for occurrences it cannot  classify
+meteor_group = function(subclass) {
+  # Group to the Stony meteorite group
+  if (str_detect(subclass, 'Achondrite') |
+      str_detect(subclass, 'Chondrite') |
+      str_detect(subclass, 'Stony')) {
+    return ('Stony')
+  }
+  # Group to the Stony-Iron meteorite group
+  if (str_detect(subclass, 'Pallasites') |
+      str_detect(subclass, 'Mesosiderite') |
+      str_detect(subclass, 'Stony-Iron')) {
+    return ('Stony-Iron')
+  }
+  # Group to the Iron meteorite group
+  if (str_detect(subclass, 'Magmatic') |
+      str_detect(subclass, 'Non-Magmatic') |
+      str_detect(subclass, 'Iron')) {
+    return ('Iron')
+  }
+  # Return unkown for all ungrouped occurrences
+  return ('Unknown')
+}
+```
+
+```{r classification_testing_grounds, include=FALSE}
+# Create one hot frame to see where there are crossovers - DONE: No overlap in the functions
+
+# meteors_t %>%
+#   select(`recclass`) %>% 
+#   drop_na(`recclass`) %>%
+#   rowwise() %>%
+#   mutate(`Chon` = is_chondrite(recclass),
+#          `Achon` = is_achondrite(recclass),
+#          `Pall` = is_pallasite(recclass),
+#          `Meso` = is_mesosiderite(recclass),
+#          `Mag` = is_magmatic(recclass),
+#          `NMag` = is_nonmagmatic(recclass),
+#          `Stn` = is_stony(recclass),
+#          `Iron` = is_iron(recclass)) %>%
+#   filter(sum(`Chon`, `Achon`, `Pall`, `Meso`, `Mag`, `NMag`, `Stn`, `Iron`) > 1)
+# Display Unknowns - DONE: Only recclasses which we want to be unknown has made it through the filter
+
+# meteors_t %>%
+#   drop_na(`recclass`) %>%
+#   rowwise() %>%
+#   mutate(`subgroup` = meteor_subgroup(recclass)) %>%
+#   select(recclass, subgroup) %>%
+#   filter(str_detect(subgroup, 'Unknown'))
+```
+
+```{r geocode, include=FALSE} 
+map = borders("world", colour="gray50", fill="white")
+
+coords2country = function(points) {  
+  countriesSP <- getMap(resolution='low')
+  #countriesSP <- getMap(resolution='high') #you could use high res map from rworldxtra if you were concerned about detail
+
+  # convert our list of points to a SpatialPoints object
+
+  # pointsSP = SpatialPoints(points, proj4string=CRS(" +proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs +towgs84=0,0,0"))
+
+  #setting CRS directly to that from rworldmap
+  pointsSP = SpatialPoints(points, proj4string=CRS(proj4string(countriesSP)))  
+
+
+  # use 'over' to get indices of the Polygons object containing each point
+  indices = over(pointsSP, countriesSP)
+
+  # return the ADMIN names of each country
+  indices$ADMIN  
+  #indices$ISO3 # returns the ISO3 code
+  #indices$continent   # returns the continent (6 continent model)
+  #indices$REGION   # returns the continent (7 continent model)
+}
+
+coords2continent = function(points) {  
+  countriesSP <- getMap(resolution='low')
+  #countriesSP <- getMap(resolution='high') #you could use high res map from rworldxtra if you were concerned about detail
+
+  # convert our list of points to a SpatialPoints object
+
+  # pointsSP = SpatialPoints(points, proj4string=CRS(" +proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs +towgs84=0,0,0"))
+
+  #setting CRS directly to that from rworldmap
+  pointsSP = SpatialPoints(points, proj4string=CRS(proj4string(countriesSP)))  
+
+
+  # use 'over' to get indices of the Polygons object containing each point
+  indices = over(pointsSP, countriesSP)
+
+  # return the ADMIN names of each country
+  #indices$ADMIN  
+  #indices$ISO3 # returns the ISO3 code
+  #indices$continent   # returns the continent (6 continent model)
+  indices$REGION   # returns the continent (7 continent model)
+}
+
+```
+
+```{r relict_handling, include=FALSE}
+relict_mass = function(nametype, mass) {
+  if (str_detect(nametype, 'Relict') & is.na(mass)) {
+    return (0)
+  } else {
+    return (mass)
+  }
+}
+
+meteors_t %>% 
+  rowwise() %>% 
+  mutate(`mass (g)` = relict_mass(nametype, `mass (g)`)) %>% 
+  filter(str_detect(`nametype`, 'Relict')) %>% 
+  select(name, GeoLocation)
+```
+
+```{r engineering, include=FALSE}
+# Preprocessing and Feature Engineering
+# Substitute 0 for NA relict meteorite's masses
+meteors = meteors_orig %>%
+  rowwise() %>% 
+  mutate(`mass (g)` = relict_mass(nametype, `mass (g)`))
+  
+
+# Create Hemisphere variable
+meteors = meteors %>% 
+  mutate(Hemisphere = ifelse(is.na(reclat), 'Unknown', 
+                             ifelse(reclat >= 0, 'North', 'South')))
+# Create subclass variable
+meteors = meteors %>% 
+  drop_na(recclass) %>% 
+  rowwise() %>% 
+  mutate(subgroup = meteor_subgroup(recclass))
+# Create class variable
+meteors = meteors %>% 
+  rowwise(recclass) %>% 
+  mutate(group = meteor_group(subgroup))
+# Create country variables
+meteors = meteors %>%
+  drop_na(reclong, reclat) %>%
+  mutate(country = coords2country(cbind(reclong,reclat)),
+         continent = coords2continent(cbind(reclong, reclat)))
+# Get rid of erroneous values
+meteors = meteors %>%
+  filter((reclat >= -90) & (reclat <= 90) & (reclong >= -180) & (reclong <= 180)) %>% 
+  filter(year < 2024)
+
+meteors %>% print(width=Inf)
+
+start_year= 860
+end_year = 2015
+zeros = tibble(year = c(start_year:end_year))
+meteors_f = meteors %>% 
+  select(`continent`, `year`) %>% 
+  filter((`year` >= start_year) & (`year` <= end_year)) %>% 
+  group_by(`continent`, `year`) %>% 
+  summarise(`meteors` = n()) %>% 
+  pivot_wider(names_from=`continent`, values_from=`meteors`, values_fill=0) %>%
+  select(!`NA`) %>%
+  right_join(zeros, by='year',) %>% 
+  mutate_all(funs(replace_na(.,0))) %>% 
+  arrange(year)
+```
+
+##### Group 311A Final Project
+
+ - Group Members:
+Hayden Dippel, Evan Krook, Jake Havertape, Linlin Zhang, and Yuhan Zhang
+
+```{r eda4, echo=FALSE}
+eda = ggplot(meteors %>% filter(!(subgroup %in% c('Stony', 'Iron', 'Unknown'))), aes(x=reclong, y=reclat)) +
+  map +
+  geom_point(aes(size=`mass (g)`, color=`subgroup`), alpha=0.6) +
+  ggtitle('Map of Meteorites') +
+  xlab('Longitude') +
+  ylab('Latitude')
+eda
+```
+
+### Introduction
+
+The focus of our project is data on meteorite landings. We want to introduce everyone to the wonders of the extraterrestrial. We want to introduce everyone to meteoritics, the study of meteors and meteorites. Our main goal in this analysis is to introduce our readers to the properties of meteorites and give some insights and general rules of thumb.
+
+We plan to do so by asking the following: how many meteorites have fallen each year and are more falling per year, what classification of meteorite is most numerous, where are meteorites found, and does mass have a relationship with classification of the meteorites? We will answer all of the questions with statistical significance so that you can apply our analysis in your own field research.
+
+In this analysis, we will explore how often meteorite landings occur, the classification and mass of the meteorite recordings, and the location of a meteorite landing.
+
+### Background
+
+#### Source
+
+A meteorite is a meteor that survives its descent through the Earth's atmosphere and strikes the Earth. The data set we used is a collection of 45,716 metoerites and information on those meteorites. It was posted by NASA on Kaggle, collected by meteoriticists, potentially like you, and compiled by the Meteoritical Society. The Meteoritical Society created this data set with every *known* meteorite landing on earth (we will get back to this problem later). The data set contains the following variables...
+
+#### Data
+
+- **Name**: The name given to the meteorite.
+- **ID**: The unique identifier of each meteorite. 
+- **Nametype**: The type of name of the meteorite. 
+  - *Valid*: The rock in question is a meteorite.
+  - *Relict*: The 'rock' in question is incredibly degraded and is just mineral traces that have expected extraterrestrial origin.
+- **Recclass**: Classification of meteorites. The main basis for classifying meteorites is the composition of the meteorite, i.e. the percentage of different substances in the meteorite. See https://en.wikipedia.org/wiki/Meteorite_classification for more information.
+- **Mass (g)**: The mass of the meteorite in grams. * We will use the logarithm to scale mass in a few cases.
+- **Fall**: Whether the meteorite was found.
+  - *Fell*: The meteorite was observed falling.
+  - *Found*: The meteorite may have landed long ago, but was only found that year. Its descent was not observed.
+- **Year**: The year the meteorite was recorded landing. 
+- **Reclat**: Latitude of the meteorite's landing site.
+- **Reclong**: Longitude of the meteorite's landing site.
+- **GeoLocation**: The combination of the latitude and the longitude of the metrorites’s landing site.
+
+we will add the following variables...
+
+- **Group**: *Iron*, *Stony*, or *Stony-Iron* classifiers that follow scientific classification of the meteorites. See https://en.wikipedia.org/wiki/Meteorite_classification for more information.
+  - *Iron*: Meteorites composed primarily of metals
+  - *Stony-Iron*: Meteorites composed of a mix of metals and stones
+  - *Stony*: Meteorites composed primarily of stones
+- **Subgroup**: Marker for the subgroup which the meteorite is in. See https://en.wikipedia.org/wiki/Meteorite_classification for more information.
+  - *Achondrite*: Subgroup of the *Stony* group.
+  - *Chondrite*: Subgroup of the *Stony* group.
+  - *Pallasites*: Subgroup of the *Stony-Iron* group.
+  - *Mesosiderite*Subgroup of the *Stony-Iron* group.
+  - *Magmatic*: Subgroup of the *Iron* group.
+  - *Non-Magmatic*: Subgroup of the *Iron* group.
+- **Country**: Which country the meteorite was found in.
+- **Continent**: Which continent the meteorite was found in.
+- **Hemisphere**: Unknown, North, or South for the hemisphere of origin. We define a meteor found exactly on the equator as in the Northern Hemisphere.
+
+#### Notes on the data and collection
+
+There are some concerns and assumptions we must address. Firstly, this is the collection of all known meteorites. A rough estimate by scientists is that we find only 2% of the meteorites that make their way to Earth. The next problem we must address is the collection of this data. Especially for our analysis of regions and their meteorites, the collection is dependant on the scientific interest of meteoritics in that region. If a country, for example Australia, decides that they do not want to invest scientific resources to meteoritics, it can severely skew our data. For the interests of this analysis, we will assume that every country has an equal scientific interest in meteoritics and equal scientific investment.
+
+#### Why?
+
+Why do meteorites matter? Scientists, not just meteoriticists, are incredibly interested in meteorites because they can give insights into the origins of our planet. Meteorites are viewed as fossils. Some meteorites allow geologists to see what planets looked like millennia ago and some meteorites are direct analogues to the core of our planet. Meteorites, almost exclusively, give this information to scientists. Oh, and not to mention, a meteorite also caused Earth's greatest extinction event, the K-T extinction, which killed the dinosaurs and led us our planet into an ice age. 
+
+Meteorites aren't just an area of scientific interest, but one of global security, too.
+
+#### What we will do
+
+In our analysis we will examine how many meteorites land in Northern and Southern Hemispheres through a 95% confidence difference of mean hypothesis test with a p-value. We will analyze the the frequency of landings in the different continent, answering whether meteorites are more likely to land on a given continent. We will see if you can use mass to identify the type of your meteorite. We will finally see whether more meteorites are striking Earth, or not.
+
+If you want a deeper understanding of meteorites check out this link - https://www.psi.edu/epo/faq/meteor.html#:~:text=To%20date%2C%20there%20have%20been,less%20than%2010%20are%20recovered.
+
+```{r eda1, include=FALSE}
+eda = ggplot(meteors, aes(x=reclong, y=reclat)) +
+  map +
+  geom_point(aes(color=fall), alpha=0.4) +
+  ggtitle('Map of Fallen and Found Meteorites') +
+  xlab('Longitude') +
+  ylab('Latitude') +
+  scale_color_manual(values=c(pink, blue))
+eda
+```
+
+```{r eda2, include=FALSE}
+eda = ggplot(meteors, aes(x=fall, y=`mass (g)`)) +
+  geom_boxplot(fill=c(pink, blue)) +
+  scale_y_continuous(limits=c(1, 1000)) +
+  ggtitle('Masses of Fallen and Found Meteorites') +
+  xlab('') +
+  ylab('Mass (g)')
+eda
+```
+
+```{r eda3, include=FALSE}
+eda = ggplot(meteors %>%  filter(!(group %in% c('Unknown'))), aes(x=`group`)) +
+  geom_bar(fill=c(blue, red, yellow)) +
+  ggtitle('Frequencies of Different Subclasses of Meteorite') +
+  xlab('') +
+  ylab('Frequency') + 
+  coord_flip()
+eda
+```
+
+```{r eda5, include=FALSE}
+eda = ggplot(meteors %>% filter(!is.na(continent)), aes(x=`continent`, fill=`continent`)) +
+  geom_bar() +
+  ggtitle('Meteorites Found on Each Continent') +
+  xlab('') +
+  ylab('')
+eda
+```
+
+```{r eda6, include=FALSE}
+eda = ggplot(meteors %>% filter(!is.na(`continent`)), aes(x=`continent`, y=log(`mass (g)`), fill=`continent`)) +
+  geom_hline(yintercept=0, linetype='dashed') +
+  geom_boxplot() +
+  ggtitle('Boxplots of Distribution of Log10 of Mass for Meteorites in Each Continent') +
+  xlab('') +
+  ylab('Log10 of Mass (grams)')
+eda
+```
+
+```{r eda7, include=FALSE}
+eda = ggplot(meteors %>% filter(!is.na(`continent`)), aes(x=log(`mass (g)`), color=`continent`)) +
+  geom_density() +
+  ggtitle('Boxplots of Distribution of Log10 of Mass for Meteorites in Each Continent') +
+  xlab('') +
+  ylab('Log10 of Mass (grams)')
+eda
+```
+
+```{r eda8, include=FALSE}
+eda = ggplot(meteors %>% filter(!(`subgroup` %in% c('Iron', 'Stony', 'Unknown'))), aes(x=reclong, y=reclat)) +
+  map +
+  geom_point(aes(color=`subgroup`)) +
+  ggtitle('Map of Subgroups of Meteorites') +
+  xlab('Longitude') +
+  ylab('Latitude')
+eda
+```
+
+```{r eda9, include=FALSE}
+eda = ggplot(meteors %>% filter(!(group %in% c('Unknown'))), aes(x=reclong, y=reclat)) +
+  map +
+  geom_point(aes(color=`group`)) +
+  ggtitle('Map of Groups of Meteorites') +
+  xlab('Longitude') +
+  ylab('Latitude')
+eda
+```
+
+```{r eda10, include=FALSE}
+eda = ggplot(meteors %>% filter(!(subgroup %in% c('Stony', 'Iron', 'Unknown'))), aes(x=log(`mass (g)`), color=`subgroup`)) +
+  geom_density(size=1) +
+  ggtitle('Boxplots of Distribution of Log10 of Mass for Meteorites Subgroups') +
+  xlab('Log10 of Mass (grams)') +
+  ylab('')
+eda
+```
+
+```{r eda11, include=FALSE}
+eda = ggplot(meteors %>% filter(!(group %in% c('Unknown'))), aes(x=log(`mass (g)`), color=`group`)) +
+  geom_density() +
+  ggtitle('Boxplots of Distribution of Log10 of Mass for Groups of Meteorites') +
+  xlab('Log10 of Mass (grams)') +
+  ylab('')
+eda
+rm(eda)
+```
+
+## Northern Vs Southern Hemisphere Meteor Showers
+
+Every year several meteors strike the earth on both sides of the equator. We wondered if there was a difference in the number of meteorites that landed in the northern and southern hemispheres. 
+
+To answer this question we will use a difference of means test between the meteors showers of the northern and southern hemispheres. We will only examine meteorites that *fell* from 1900 to 2013.
+
+The hypotheses we will use:
+
+$$
+H_0: N_n = N_s \\
+H_a: N_n \neq N_s
+$$
+
+The test statistic we will use is
+
+$t = \frac{N_n - N_s}{\text{SE}(N_n - N_s)}$
+
+The model we will use is a t-model
+
+$N_n - N_s \sim \text{t}(\mu, df)$
+
+```{r NorthSouth1, echo=FALSE}
+# Only evaluating 1900 onwards because we will assume the proper technology was not in place to capture all the data
+start_year = 1900
+end_year = 2013
+zeros = tibble(year = seq(start_year, end_year), Meteors = 0)
+
+north = meteors %>%
+  filter((fall == 'Fell') & (Hemisphere == 'North') & (year >= start_year)) %>%
+  group_by(year) %>%
+  summarise('Meteors' = n())
+north = full_join(zeros, north, by='year') %>% 
+  mutate(Meteors.y = replace_na(Meteors.y, 0)) %>% group_by(year) %>%
+  mutate(NorthMeteors = max(Meteors.x, Meteors.y)) %>% 
+  select(year, NorthMeteors)
+xnorth = north %>% pull(NorthMeteors)
+
+south = meteors %>%
+  filter((fall == 'Fell') & (Hemisphere == 'South') & (year >= start_year)) %>%
+  group_by(year) %>%
+  summarise('Meteors' = n())
+south = full_join(zeros, south, by='year') %>% 
+  mutate(Meteors.y = replace_na(Meteors.y, 0)) %>% group_by(year) %>%
+  mutate(SouthMeteors = max(Meteors.x, Meteors.y)) %>% 
+  select(year, SouthMeteors)
+xsouth = south %>% pull(SouthMeteors)
+
+# Perform the Confidence Interval Calculations
+NSMeteors = north %>% 
+  merge(south, by='year') %>% 
+  mutate(diff = NorthMeteors - SouthMeteors) %>% 
+  summarise(n = n(), mean = mean(diff), sd = sd(diff), r = cor(NorthMeteors, SouthMeteors))
+
+ci_calc = NSMeteors %>% 
+  mutate(se = sd/sqrt(n), tmult = qt(0.975, n-1), me = tmult * se, low = mean - me, high = mean + me)
+
+a = north %>% 
+  left_join(south, by='year') %>% 
+  rename(north=NorthMeteors, south=SouthMeteors) %>% 
+  pivot_longer(!year, names_to='Hemisphere', values_to='meteors')
+
+ggplot(a, aes(x=year, y=meteors)) +
+  geom_density(stat='smooth', aes(color=Hemisphere, fill=Hemisphere), alpha=0.3) +
+  xlim(start_year, end_year) +
+  ggtitle('Northern Hemisphere vs Southern Hemisphere') +
+  xlab('Year') +
+  ylab('Meteorites')
+
+
+
+# Extract confidence interval
+low = ci_calc %>% pull(low)
+high = ci_calc %>% pull(high)
+ci = c(low, high)
+# ci
+
+# Use built in features to confirm test
+# t.test(x = xnorth,
+#        y = xsouth,
+#        paired = TRUE)
+pval = (1 - pt(NSMeteors$mean, NSMeteors$n - 1))
+pval
+```
+
+> Our analysis suggests that there is very strong statistical evidence, we are 95% confident, (difference of means, p-value = 0.00003) that the meteorite showers in the northern hemisphere are greater than those in the southern hemisphere. 
+
+Some people may argue about the land mass different of the two hemispheres. The northern hemisphere is comprised of 40% land while the southern hemisphere is comprised of about 20% land. If we adjust for the land mass disparity will we get the same results?
+
+```{r NorthSouth2, echo=FALSE}
+# Only evaluating 1900 onwards because we will assume the proper technology was not in place to capture all the data
+zeros = tibble(year = seq(start_year, end_year), Meteors = 0)
+
+north = meteors %>%
+  filter((fall == 'Fell') & (Hemisphere == 'North') & (year >= start_year)) %>%
+  group_by(year) %>%
+  summarise('Meteors' = n())
+north = full_join(zeros, north, by='year') %>% 
+  mutate(Meteors.y = replace_na(Meteors.y, 0)) %>% group_by(year) %>%
+  mutate(NorthMeteors = max(Meteors.x, Meteors.y) / 2) %>% 
+  select(year, NorthMeteors)
+xnorth = north %>% pull(NorthMeteors)
+
+south = meteors %>%
+  filter((fall == 'Fell') & (Hemisphere == 'South') & (year >= start_year)) %>%
+  group_by(year) %>%
+  summarise('Meteors' = n())
+south = full_join(zeros, south, by='year') %>% 
+  mutate(Meteors.y = replace_na(Meteors.y, 0)) %>% group_by(year) %>%
+  mutate(SouthMeteors = max(Meteors.x, Meteors.y)) %>% 
+  select(year, SouthMeteors)
+xsouth = south %>% pull(SouthMeteors)
+
+# Perform the Confidence Interval Calculations
+NSMeteors = north %>% 
+  merge(south, by='year') %>% 
+  mutate(diff = NorthMeteors - SouthMeteors) %>% 
+  summarise(n = n(), mean = mean(diff), sd = sd(diff), r = cor(NorthMeteors, SouthMeteors))
+
+ci_calc = NSMeteors %>% 
+  mutate(se = sd/sqrt(n), tmult = qt(0.975, n-1), me = tmult * se, low = mean - me, high = mean + me)
+
+# Extract confidence interval
+low = ci_calc %>% pull(low)
+high = ci_calc %>% pull(high)
+ci = c(low, high)
+# ci
+pval = (1 - pt(NSMeteors$mean, NSMeteors$n - 1))
+pval
+```
+
+> Our analysis suggests that there is not statistical evidence, 95% confidence (difference of means, p-value = 0.0591) that the meteorite showers in the northern hemisphere are greater than those in the southern hemisphere when adjusting for land mass.
+
+Meteorite showers in the North are greater than showers in the south, but only because of the North's extra land mass. If we adjust for land mass, meteorites come through the atmosphere and land in these respective hemisphere randomly.
+
+## Continents and Meteorites
+```{r BestContinent, echo=FALSE}
+# Main analysis - Confidence intervals for the 7 continents
+# you can adjust these variables as you please
+start_year= 1970
+end_year = 2013
+zeros = tibble(year = c(start_year:end_year))
+
+Continent_Meteorites_Per_Year = meteors %>% 
+  select(`continent`, `year`) %>% 
+  filter((`year` >= start_year) & (`year` <= end_year)) %>% 
+  group_by(`continent`, `year`) %>% 
+  summarise(`meteors` = n()) %>% 
+  pivot_wider(names_from=`continent`, values_from=`meteors`, values_fill=0) %>%
+  select(!`NA`) %>% 
+  right_join(zeros, by='year',) %>% 
+  mutate_all(funs(replace_na(.,0))) %>% 
+  arrange(year)
+
+long_continent_data = Continent_Meteorites_Per_Year %>%
+  pivot_longer(!year, names_to = 'continent', values_to='meteorites')
+
+timeseries = ggplot(long_continent_data, aes(x = year, y = meteorites, fill = continent)) +
+  geom_col() +
+  scale_fill_viridis_d(option='magma') +
+  ggtitle('Meteorites Among the Continents by Year') +
+  xlab('Year') +
+  ylab('Meteorites')
+
+# # This Code checks if we lost data in the above process
+# 
+# # Sum of meteorites in our new dataframe for 1800-2013 and continent != NA
+# calculated_total_meteors = Continent_Meteorites_Per_Year %>%
+#   summarise(n = sum(`Africa`, `Antarctica`, `Asia`, `Australia`, `Europe`, `North America`, `South America`)) %>% pull(n)
+# # Sum of meteorites in our base dataframe for 1800-2013 and continent != NA
+# true_total_meteors = meteors %>%
+#   select(`continent`, `year`) %>%
+#   drop_na(`continent`) %>%
+#   filter((`year` >= start_year) & (`year` <= end_year)) %>%
+#   summarise(n = n()) %>% pull(n)
+# # Check if they are the same
+# true_total_meteors == calculated_total_meteors
+
+CI_Meteorites_Per_Year = Continent_Meteorites_Per_Year %>%
+  pivot_longer(!year, names_to = 'continent', values_to='meteorites') %>% 
+  group_by(continent) %>% 
+  summarise(n = n(), mean = mean(`meteorites`), sd = sd(`meteorites`), lo = mean - qnorm(0.975) * sd, hi = mean + qnorm(0.975) * sd) %>% 
+  select(`continent`, `mean`, `low`, `high`)
+
+ci_graph = ggplot(CI_Meteorites_Per_Year, aes(x=`continent`, xend=`continent`, y=`low`, yend=`high`, color=`continent`)) +
+  geom_segment(size=25) + 
+  theme(legend.position='none') +
+  scale_color_viridis_d(option='magma') +
+  ggtitle('Expected Meteorites Discovered') +
+  ylab('Meteorites') +
+  xlab('Year')
+
+# confusion matrix of pvalues for difference of continents
+continents = c('Antarctica', 'Asia', 'Africa', 'North America', 'South America', 'Australia', 'Europe')
+
+conf_matrix = tibble('continents' = continents, 'Antarctica' = 0, 'Asia' = 0, 'Africa' = 0, 'North America' = 0, 'South America' = 0, 'Australia' = 0, 'Europe' = 0) %>% 
+  column_to_rownames('continents')
+for (cont_col_idx in 1:7) {
+  for (cont_row_idx in 1:7) {
+    
+    col_cont = continents[cont_col_idx]
+    row_cont = continents[cont_row_idx]
+
+    x = Continent_Meteorites_Per_Year %>% pull(col_cont)
+    y = Continent_Meteorites_Per_Year %>% pull(row_cont)
+    pvalue = t.test(x, y, paired=TRUE)[3]
+    # print(paste(col_cont, row_cont, pvalue))
+
+    conf_matrix[cont_col_idx, cont_row_idx] = pvalue
+  }
+}
+conf_matrix = conf_matrix %>%
+  mutate_all(round, 4) %>% 
+  rename('ANT'= Antarctica, 'AFR' = Africa, 'ASIA' = Asia, 'AU' = Australia, 'NA' = 'North America', 'SA' = 'South America', 'EUR' = Europe)
+for (i in 1:7) {
+  conf_matrix[i, i] = 1
+}
+```
+
+Another very similar question can be asked concerning where you can go to just find meteorites. As an amateur meteoriticist - a scientist who studies meteors, meteorites, and meteoroids - you want to know what the continent that gives you the best chance to find your first meteorite. Are you just as likely to find one in North America as Asia? As Australia? As Antarctica? ...
+
+```{r echo=FALSE}
+timeseries
+```
+
+Preliminary analysis shows that there are a lot of meteorites found in Antarctica, Africa, and Asia. 
+
+How many meteorites are expected to be found in these locations every year? 
+
+```{r, echo=FALSE}
+CI_Meteorites_Per_Year
+ci_graph
+```
+
+The plot above shows the confidence intervals meteorites that we expect to find in each continent each year. We are 95% confident that we will find a count of meteorites in these bars for each continent each year. This doesn't answer our question of where you should go to find your first meteorite. Lets answer that now.
+
+We can tell that Antarctica is home to many more meteorite discoveries than any other continent. How about we test the statistical significance of meteorite findings in Antarctica against all the other continents combined. If Antarctica beats the world, it is clear that you should go to Antarctica to find your first meteorite.
+
+```{r echo=FALSE}
+AntVNot = Continent_Meteorites_Per_Year %>% 
+  mutate(Not = Africa + Asia + Australia + Europe + `North America` + `South America`) %>% 
+  select(Antarctica, Not, year)
+
+x = Continent_Meteorites_Per_Year$Antarctica
+y = Continent_Meteorites_Per_Year %>% 
+  mutate(Not = Africa + Asia + Australia + Europe + `North America` + `South America`) %>% pull(Not)
+
+AntVNot = AntVNot %>% 
+  rename('Not Anartica' = Not) %>% 
+  pivot_longer(!year, names_to='Region', values_to='meteors')
+
+ggplot(AntVNot, aes(x=year, y=meteors)) +
+  geom_density(stat='smooth', aes(color=Region, fill=Region), alpha=0.3) +
+  xlim(c(1970, 2013)) +
+  ggtitle('Antarctic Meteorite Findings Vs. The World') + 
+  xlab('Meteorites') +
+  ylab('Year')
+
+pvalue = t.test(x, y, paired=TRUE)[3]
+pvalue
+```
+
+> Our analysis suggests that there is very strong statistical evidence (difference of means with p-value = 0.0018). We are 95% confident that more meteorites are found in Antarctica each year that the rest of the world combined.
+
+Antarctica 'beat' the world. This makes sense because extremely few people live in Antarctica, allowing scientists have a better environment to excavate meteorites. Such excavations are impossible in modern cities.
+
+#### More Comparisons
+
+It is likely that you can't afford a scientific expedition to Antarctica so here is a matrix for all the other continents. It follows the same methods above. If the number is in a cell is less than 0.05 that means that it is has more or less meteorite findings per year than the other continent. The continents are listed in order so if you look at (ANT, Asia) it has 0.0001 p-value, meaning that Antarctica has more meteorite findings than Asia. (AFR, Asia) has 0.6524 which is not less than 0.05 which means that we cannot says that it is better to search in either Asia or Africa for your first meteorite.
+
+```{r echo=FALSE}
+conf_matrix
+```
+
+## How do you use mass to identify your meteorite?
+```{r echo=FALSE}
+total = meteors %>% 
+  select(`subgroup`) %>% 
+  filter(!(`subgroup` %in% c('Stony', 'Iron', 'Unknown'))) %>% 
+  summarise(total = n()) %>% 
+  pull(total)
+subgroup_freq = meteors %>% 
+  group_by(`subgroup`) %>%
+  select(`subgroup`) %>% 
+  filter(!(`subgroup` %in% c('Stony', 'Iron', 'Unknown'))) %>% 
+  mutate(tot = n()) %>% 
+  summarise(freq = n() / total)
+piechart = ggplot(subgroup_freq, aes(x="", y= freq, fill=subgroup)) +
+  geom_bar(stat="identity", width=1) +
+  coord_polar("y", start=0) +
+  scale_fill_manual(values=c(red, orange, yellow, green, blue, purple)) +
+  ggtitle("Frequencies of Different Subgroups of Meteroites") +
+  theme_void()
+
+subgroup_masses = meteors %>% 
+  group_by(subgroup) %>% 
+  filter(!(subgroup %in% c('Unknown', 'Iron', 'Stony'))) %>%
+  mutate(`mass (g)` = log(`mass (g)`, base = 10)) %>% 
+  mutate(`mass (g)` = as.integer(`mass (g)`)) %>% 
+  drop_na(`mass (g)`) %>% 
+  summarize(sum = sum(`mass (g)`), n = n(), mean = sum/n, sd = sd(`mass (g)`), low = mean - qnorm(0.975) * sd, high = mean + qnorm(0.975) * sd) %>%
+  arrange(desc(mean)) %>% 
+  select(subgroup, mean, low, high)
+
+ci_graph = ggplot(subgroup_masses, aes(x=subgroup, xend=subgroup, y=low, yend=high)) +
+  geom_segment(size=30, color=c(yellow, blue, purple, green, red, orange)) +
+  geom_hline(aes(yintercept=0), color=black) +
+  ggtitle('Confidence Intervals For Masses of Meteorite Subgroups') +
+  xlab('') +
+  ylab('log10(Mass (g))')
+```
+Seeing that you're a new meteoriticist, you likely don't have the scientific tools needed to properly classify you're newfound meteorite. Luckily we can help you narrow down which groups and subgroups you're rock belongs to. First, what type of meteorite are you likely dealing with?
+
+```{r echo=FALSE}
+piechart
+```
+
+Historical data suggests that there is a 93% chance that you are likely looking at a Chondrite. Chondrites are by far the most numerous meteorites of all.
+
+What if you know the mass of your meteorite? Can you classify your meteorites off of mass? What we give you here won't let you classify off of mass alone, but you can narrow down what you may have found with 95% confidence.
+
+```{r echo=FALSE}
+subgroup_masses
+ci_graph
+```
+
+## Are more meteorites landing on Earth?
+```{r, echo=FALSE}
+start_year = 1970
+end_year = 2013
+
+meteors_fell = meteors %>% 
+  select(`fall`, `year`) %>% 
+  filter(`year` >= start_year & `year` <= end_year & `fall` == 'Fell') %>% 
+  group_by(`year`) %>% 
+  summarise(`meteors` = n()) %>% 
+  right_join(tibble(year = c(start_year:end_year)), by='year') %>% 
+  mutate_all(funs(replace_na(.,0)))
+
+model = lm(meteors ~ year, meteors_fell)
+coefs = coef(summary(model))
+slope = coefs['year', 'Estimate']
+intercept = coefs['(Intercept)', 'Estimate']
+pvalue = coefs['year', 'Pr(>|t|)']
+
+reg_plot = ggplot(meteors_fell, aes(x=`year`, y=`meteors`)) +
+  geom_point(color=black, size=3) +
+  geom_abline(slope=slope, intercept=intercept, linetype='dashed', color=red) +
+  geom_hline(yintercept=0, color=black) +
+  ggtitle('Meteorites Observed Crashing into Earth', subtitle='1970-2013') +
+  xlab('Year') +
+  ylab('Meteorites')
+```
+
+Before you declare as a geology major, you want to know if the field is growing, dying, or staying the same. The question you are wondering is are the number of meteorites landing on earth increasing, decreasing, or unchanging. We will only look at 1970 to 2013.
+
+We will do a 95% confidence hypothesis test on the slope of a linear regression model to see if the number of meteorite landings over the last 44 years is changing.
+
+```{r echo=FALSE}
+reg_plot
+coef(summary(model))
+```
+
+> This regression shows us that there is no evidence supporting the hypothesis that the number of meteors hitting earth is changing (95% hypothesis test with p-value of 0.4114).
+
+We can confidently say that the number of meteors striking earth is not increasing or decreasing in recent years. So going into meteoritics isn't a bad idea.
+
+## Discussion
+
+### Interpretations
+
+For comparing the number of meteorite falls in the northern and southern hemispheres, we did a hypothesis test. We calculated a p value of 0.0001 (95% confidence interval). However, this hypothetical calibration does not take into account the difference in land area between the two hemispheres. This is because it is much more difficult to find a fallen meteorite in the ocean than it is to find one on land. After excluding the difference in land area, we rechecked the hypothesis, this time with a p-value of 0.059. Therefore, We conclude that there is not a strong evidence that more meteorites land in the northern hemisphere than in the south.
+
+By calculating the mean number of meteorites per year for different continents with a 95% confidence interval, we found that the number of meteorites found in Antarctica is much higher than in other continents. To verify our observations, we performed a t-test on the mean number of meteorites found in Antarctica compared to the other continents. The test results show that the p-value is close to zero. Therefore, we conclude that the number of meteorites found in Antarctica is higher than the number of meteorites found in other continents. For such a result, we believe that this may be due to the fact that Antarctica is rarely settled by humans. Therefore, scientists are free to dig in Antarctica without considering the impact on the normal functioning of society.
+
+When exploring the number of different types of meteorites, we tried to use the logarithm of the mass to attenuate the effect of very large or very small masses on the distribution. The results show that the average logarithm of mass is greatest for the Magmatic meteorites.However, the very large differences in mass between the different types of meteorites lead to large standard deviations, which in turn lead to large confidence intervals that make it impossible to determine the type of meteorite by its mass.
+
+Also, we tried to find whether there is a linear relationship between the number of fallen meteorites per year and time (taking into account factors such as technology). Using histograms and trying to simulate using linear regression, we found that the relationship between year and the number of meteorites falling per year is very weak (p-value 0.4114). Therefore we cannot say that there is evidence supporting change in the number of meteorites landing per year.
+
+### Potential Short Comings
+
+One problem is that we have only one data set. Therefore, when making some comparisons it is possible to draw wrong conclusions due to insufficient data, for example, the comparison of the number of meteorites found in the northern and southern hemispheres. In addition, because the masses of meteorites vary so widely from one meteorite to another, when calculating confidence intervals for the masses, we have to use the logarithm of the masses in order to avoid negative masses. This may lead to the fact that we cannot infer the type of meteorite from the mass of the meteorite.
+
+Also, back to the concerns we had in the data sections, out data is entirely reliant on the scientific interest in meteorites of a given region. If Australia does not want to invest that many scientific resources to meteorites, we have bad data. There isn't a clear way to combat this issue either.
+
+### Future Direction
+
+The direction of our future work is to find more and more comprehensive meteorite data as possible because this data is from NASA and the sample size may be limited. If we can find some data from other national space agencies and combine these data it may be a more comprehensive analysis. 
+
+The goal of meteoritics is to find insight into our planets birth and its core while also learning about the extraterrestrial. When we begin colonizing our solar system meteoritics may be partially to thank.
+
+##### References
+
+Nasa. (2016, November 5). Meteorite landings. Kaggle. Retrieved December 5, 2022, from https://www.kaggle.com/datasets/nasa/meteorite-landings
+
+Publisher data.nasa.gov. (2022, December 5). Meteorite landings. Catalog. Retrieved December 5, 2022, from
+https://catalog.data.gov/dataset/meteorite-landings
+
+Wikimedia Foundation. (2022, October 5). Meteorite classification. Wikipedia. Retrieved December 5, 2022, from https://en.wikipedia.org/wiki/Meteorite_classification 
+
+Planetary Science Institute. (2022, December 12). FAQ - Meteoroids/Meteorites. Planetary Science Institute. Retrieved December 12, 2022, from https://www.psi.edu/epo/faq/meteor.html#:~:text=To%20date%2C%20there%20have%20been,less%20than%2010%20are%20recovered.
+
+StackOverflow. (2012 December). Convert latitude and longitude coordinates to country name in R. Retrieved November, 2022, from
+https://stackoverflow.com/questions/14334970/convert-latitude-and-longitude-coordinates-to-country-name-in-r
